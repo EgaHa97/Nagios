@@ -1,0 +1,754 @@
+NAGIOS INI FOR WINDOWS:
+
+[/modules]
+NSCAClient = 1
+CheckDisk = 1
+CheckEventLog = 1
+CheckExternalScripts = 1
+CheckHelpers = 1
+CheckSystem = 1
+CheckWMI = 1
+Scheduler=1
+NSClientServer = 1
+CheckSystem=1
+CheckTaskSched=1
+ 
+[/settings/NSCA/client/targets/default]
+encryption=3
+password=omcmonitor
+host=monitor.omc.co.il
+port=5667
+timeout=30
+ 
+[/settings/NSCA/client]
+hostname=88888_il_vm_dotan.server.test
+ 
+[/settings/scheduler/schedules/default]
+channel=NSCA
+interval=300s
+report=all
+ 
+[/settings/external scripts/alias]
+alias_cpu=checkCPU warn=90 crit=95 time=5m time=1m time=30s
+alias_disk = CheckDriveSize MinWarn=10% MinCrit=5% CheckAll FilterType=FIXED
+;**IF YOU WANT TO CHECK SPECIFIC DISKS **(ONLY WORKS ON NAGIOS CLIENT OLDER THAN 0.4.1.105)**: CheckAllOthers Drive=E: MinWarn=5% MinCrit=4%
+;**IF YOU WANT TO LIMIT TO GBs: MinWarnFree=4G MinCritFree=4g / ;alias_disk = CheckDriveSize MinWarn=5G MinCritFree=4G CheckAll FilterType=FIXED
+;**IF YOU WANT TO EXCLUDE A DRIVE MONITOR IN NAGIOS: CheckAll FilterType=FIXED CheckAllOthers Drive=F:
+alias_mem=checkMem MaxWarn=90% MaxCrit=95% ShowAll type=physical type=page type=virtual
+alias_svc=checkServiceState CheckAll exclude=SysmonLog exclude=sppsvc exclude=RemoteRegistry exclude=ShellHWDetection exclude=BITS exclude=MapsBroker exclude=TrustedInstaller exclude=WbioSrvc exclude=gupdate exclude=TBS exclude=clr_optimization_v4.0.30319_32 exclude=clr_optimization_v4.0.30319_64
+;**possible to add any all processes like OneSyncSvc_**
+;**IF YOU WANT TO EXCLUDE A SERVICE CHECK: exclude="service name"
+alias_uptime=checkUpTime MinWarn=1d MinCrit=12h ShowAll
+;alias_custom=CheckFiles path=C:\PROGRA~2\MAILEN~1\Queues\SMTP\Outgoing pattern=*.MAI "filter=size gt 0s" syntax= max-dir-depth=0 MaxWarn=20 MaxCrit=25
+;alias_filesinfolder=CheckFiles path=C:\PROGRA~2\MAILEN~1\Postoffices\24option\MAILROOT\archive\Inbox pattern=*.MAI "filter=size gt 0s" "master-syntax=%total% Messages found in path: /MAILROOT/archive/Inbox" max-dir-depth=0 MaxWarn=400 MaxCrit=1000
+;alias_custom=CheckProcState ShowAll ipalsync.exe=started
+ 
+[/settings/external scripts/scripts]
+;alias_ping=scripts\check_ping.bat 192.168.6.101
+;alias_string=scripts\check_string.bat ON
+;alias_openmanage=scripts\check_openmanage
+;alias_openmanage_array=cmd /c echo scripts\check_smartarray_v1.6.ps1 | powershell.exe -command -
+ 
+[/settings/scheduler/schedules]
+nsca_check_cpu=alias_cpu
+nsca_check_disk=alias_disk
+nsca_check_mem=alias_mem
+nsca_check_svc=alias_svc
+nsca_check_uptime=alias_uptime
+;nsca_check_ping=alias_ping
+;nsca_check_string=alias_string
+;nsca_check_custom=alias_custom
+;nsca_check_filesinfolder=alias_filesinfolder
+;nsca_check_openmanage=alias_openmanage
+
+==============================================================================================================================================================================
+ALERT ASSEMBLY IN NAGIOS COMMANDS.CFG (לא לשנות - רק באישור מנהל):
+ 
+command_line    /usr/bin/printf "%b" "Notification Type: $NOTIFICATIONTYPE$\n
+State: $SERVICESTATE$\n\n
+Date/Time: $LONGDATETIME$\n\n
+ 
+Additional Info:\n
+$SERVICEOUTPUT$\n
+====================================================================\n\n
+Host: $HOSTALIAS$ ($HOSTADDRESS$)\n
+Host Priority: $_HOSTDEFAULT_PRIORITY$\n
+Host Department: $_HOSTDEFAULT_TEAM$\n
+====================================================================\n\n
+Service: $SERVICEDESC$\n
+Service Description: $SERVICENOTES$\n
+Service Priority: $_SERVICEDEFAULT_PRIORITY ($_SERVICEDEFAULT_TEAM$)\n
+====================================================================\n\n
+** Please do not reply or forward this email to our support system, it will be rejected automatically.\n\n
+ 
+" | /bin/mail -r "blackhole@omc.co.il (OMC Monitor)" -s "`curl -k -s -f --connect-timeout 10 
+--data-urlencode "subject=Alert: $HOSTALIAS$ ($HOSTADDRESS$) / $SERVICEDESC$ has $NOTIFICATIONTYPE$" 
+https://portal.cloudwm.com/alertid.php` 
+Alert: $HOSTALIAS$ ($HOSTADDRESS$) / $SERVICEDESC$ has $NOTIFICATIONTYPE$" $CONTACTEMAIL$ 2>&1
+
+==============================================================================================================================================================================
+DEFINE A HOST IN NAGIOS ( IT - CLIENT )
+
+define host {
+        host_name       37957_il_vm_srv.atudot.com
+        use     generic-server
+        display_name    37957_il_vm_srv.atudot.com
+        alias   37957_il_vm_srv.atudot.com
+        address 5.100.248.175
+        hostgroups      nsca_check_cpu,nsca_check_disk,nsca_check_mem,nsca_check_svc,check_rdp
+        contacts        0523661037@sms.inforu.co.il,davidm@adom-it.co.il
+        contact_groups  OMC - IT Services
+        notifications_enabled   1
+        _default_team    IT Services
+}
+
+----------------------------------------------------------------------------------------------|
+DEFINE A HOST IN NAGIOS ( CLOUD - CLIENT )
+
+define host {
+        host_name       40955_il-jr_vm_partuksrv
+        use     generic-server
+        display_name    40955_il-jr_vm_partuksrv
+        alias   40955_il-jr_vm_partuksrv
+        address 185.162.125.45
+        hostgroups      check_ping
+        contact_groups  OMC - Cloud Services
+        notification_interval   1440
+        notifications_enabled   1
+}
+
+==============================================================================================================================================================================
+EXCLUDE MONITORING A FOLDER IN LINUX:
+ 
+If you read manpage carefully, you can use -A to check all path, then use -I to ignore path that match regex:
+so if the path is /backup
+$curDir/send_data.pl $host nsca_check_disk "$curDir/plugins/check_disk -w 10% -c 6% -A -I '/backup' $disk1"
+ 
+OR
+ 
+If you read manpage carefully, you can use -A to check all path, then use -I to ignore path that match regex:
+/usr/lib64/nagios/plugins/check_disk -w 10% -c 5% -A -I '/drop-zone/*'
+This will check all path & exclude path that match '/drop-zone/*'.
+
+==============================================================================================================================================================================
+MONITORING A FOLDER IN LINUX WITH DIFFERENT PERCENTAGE:
+
+$curDir/send_data.pl $host nsca_check_disk "$curDir/plugins/check_disk -w 10% -c 6% -p $disk1 -w 2% -c 1% -p /backup"
+
+ 
+==============================================================================================================================================================================
+MONITORING A MOBILE WEBSITE:
+ 
+define host {
+        host_name       41387_eu-fr_ws_m.myloto.co.il
+        use     generic-server
+        display_name    41387_eu-fr_ws_www.myloto.co.il
+        alias   41387_eu-fr_ws_www.myloto.co.il
+        address m.myloto.co.il
+        hostgroups      check_http
+        check_interval  5
+        retry_interval  1
+        process_perf_data       0
+        contact_groups  OMC - Cloud Services
+        notifications_enabled   1
+        notes   Check if host's HTTP request returns specific string
+        _default_priority       6 - Critical
+        _default_team   SupportTeam
+}
+define service {
+        service_description     check_http_searchstring_m.myloto.co.il
+        host_name       41387_eu-fr_ws_m.myloto.co.il
+        use     generic-service
+        display_name    check_http_searchstring_m.myloto.co.il
+        check_command   check_http_searchstring!"http://m.myloto.co.il"!"/"!'<div id="agralotblocks">'
+        check_interval  5
+        retry_interval  1
+        process_perf_data       0
+        notification_interval   1440
+        notes   Check if host's HTTP request returns specific string
+        _default_priority       6 - Critical
+        _default_team   SupportTeam
+}
+ 
+==============================================================================================================================================================================
+CHECK SEARCHSTRING:
+
+1. HTTPS:
+define host {
+        host_name        33834_il_ws_www.khan.co.il
+        use     generic-server
+        display_name     33834_il_ws_www.khan.co.il
+        alias    33834_il_ws_www.khan.co.il
+        address www.khan.co.il
+        hostgroups      check_https
+        contacts
+        contact_groups  OMC - Cloud Services
+        notifications_enabled   1
+}
+ 
+define service {
+        service_description     check_https_searchstring_www.khan.co.il
+        host_name       33834_il_ws_www.khan.co.il
+        use     generic-service
+        display_name    check_https_searchstring_www.khan.co.il
+        check_command   check_https_searchstring!"/"!"6733095"
+        check_interval  5
+        retry_interval  1
+        process_perf_data       1
+        notification_interval   1440
+}
+
+2. HTTP:
+define host {
+        host_name       14250_il_ws_ssd.co.il
+        use     generic-server
+        display_name    14250_il_ws_ssd.co.il
+        alias   14250_il_ws_ssd.co.il
+        address www.ssd.co.il
+        hostgroups      check_http
+        max_check_attempts      10
+        active_checks_enabled   1
+        check_period    24x7
+        contact_groups  OMC - Cloud Services
+        notification_interval   1440
+        notifications_enabled   1
+}
+define service {
+        service_description     check_http_searchstring_www.ssd.co.il
+        host_name       14250_il_ws_ssd.co.il
+        use     generic-service
+        display_name    check_http_searchstring_ssd.co.il
+        check_command   check_http_searchstring!"/"!"Designing" --sni www.ssd.co.il
+        check_interval  5
+        retry_interval  1
+        process_perf_data       0
+        contact_groups  OMC - Cloud Services
+        notes   Check if host's HTTP request returns specific string
+        _default_priority       6 - Critical
+        _default_team   SupportTeam
+}
+
+==============================================================================================================================================================================
+CHECK HTTP / HTTPS STATUS 200 OK: 
+ 
+1. ONLY IF IT'S ROOT WEBPAGE (www.medi-link.com)
+define command {
+        command_name    check_https_200OK
+        command_line    $USER1$/check_http -f follow -e "200 OK" -S  -H $HOSTADDRESS$ $ARG1$ $ARG2$
+}
+define hostgroup {
+        hostgroup_name  check_https_200OK
+        alias   check_https_200OK
+        members 40697_il_ws_www.medi-link.co.il
+}
+define service {
+        service_description     check_https_200OK
+        host_name       40697_il_ws_www.medi-link.co.il
+        hostgroup_name  check_https_200OK
+        use     generic-service
+        display_name    check_https_200OK
+        check_command   check_https_200OK
+        check_interval  5
+        retry_interval  1
+        process_perf_data       0
+        notification_interval   1440
+        contact_groups  OMC - Cloud Services
+}
+
+2. IF IT'S MORE THAN ROOT PAGE (api.leadmanager.co.il/handlers/lm/submit.cms?lm_form=17230lm_key=42911d9a315f42dab7e9f5b92205c0c5): 
+define command {
+        command_name    check_https_searchstring_leadmanager
+        command_line    $USER1$/check_http -f follow -e "200 OK" -s $ARG2$ -S -H $HOSTADDRESS$ -u $ARG1$ -t 10 -w 7 -c 8 $ARG3$
+}
+ 
+define host {
+        host_name       71228_il_ws_api.leadmanager.co.il
+        use     generic-server
+        display_name    71228_il_ws_api.leadmanager.co.il
+        alias   71228_il_ws_api.leadmanager.co.il
+        address api.leadmanager.co.il
+#        contacts        shiri@leadmanager.co.il,alon@leadmanager.co.il,moshe@leadmanager.co.il,0522711340@sms.inforu.co.il,0528432738@sms.inforu.co.il
+        contact_groups  OMC - Cloud Services
+        notification_interval   1440
+        notifications_enabled   1
+        _default_priority       6 - Critical
+        _default_team   SupportTeam
+}
+define service {
+        service_description     check_https_searchstring_api.leadmanager.co.il
+        host_name       71228_il_ws_api.leadmanager.co.il
+        use     generic-service
+        display_name    check_https_searchstring_api.leadmanager.co.il
+        check_command   check_https_searchstring_leadmanager!"/handlers/lm/submit.cms?lm_form=17230lm_key=42911d9a315f42dab7e9f5b92205c0c5"!""
+        check_interval  5
+        retry_interval  1
+        process_perf_data       0
+        notes   Check if host's HTTP request returns specific string
+        _default_priority       6 - Critical
+        _default_team   SupportTeam
+}
+
+==============================================================================================================================================================================
+WAYS TO MONITOR AN IP INSTEAD OF DNS:
+ 
+define service {
+        service_description     check_http_searchstring_52.144.46.69
+        host_name       38017_us-ny2_ws_proxytoolchain_supernode_1
+        use     generic-service
+        display_name    check_http_searchstring_52.144.46.69
+        check_command   check_http_searchstring!"http://52.144.46.69:8082/"!"string" -p 8082
+        check_interval  5
+        retry_interval  1
+        process_perf_data       0
+        notes   Check if host's HTTP request returns specific string
+        _default_priority       6 - Critical
+        _default_team   SupportTeam
+}
+==============================================================================================================================================================================
+DEFINING CONTACTS IN NAGIOS:
+
+DEFINE PHONE:
+define contact {
+        contact_name    0544832715@sms.inforu.co.il
+        use     generic-contact
+        alias   0544832715@sms.inforu.co.il
+        host_notifications_enabled      1
+        service_notifications_enabled   1
+        email   0544832715@sms.inforu.co.il
+}
+DEFINE EMAIL:
+define contact {
+        contact_name    shiri@leadmanager.co.il
+        use     generic-contact
+        alias   shiri@leadmanager.co.il
+        host_notifications_enabled      1
+        service_notifications_enabled   1
+        email   shiri@leadmanager.co.il
+}
+----------------------------------------------------------------------------------------------|
+DEFINING A CONTACT GROUP IN NAGIOS:
+ 
+define contactgroup {
+        contactgroup_name       google-devops-group
+        alias   google-devops-group
+        members          flotz@google.com,0548888888@sms.inforu.co.il
+}
+define contact {
+        contact_name    flotz@google.com
+        use     generic-contact
+        alias   flotz@google.com
+        host_notifications_enabled      1
+        service_notifications_enabled   1
+        email   flotz@google.com
+}
+define contact {
+        contact_name    0548888888@sms.inforu.co.il
+        use     generic-contact
+        alias   0548888888@sms.inforu.co.il
+        host_notifications_enabled      1
+        service_notifications_enabled   1
+        email   0548888888@sms.inforu.co.il
+}
+
+==============================================================================================================================================================================
+CHECK IF PORT IS OPEN:
+ 
+define hostgroup {
+        hostgroup_name  check_ssl_993
+        alias   check_ssl_993
+        members hx3.cloudwm.com
+}
+define service {
+        service_description     check_ssl_993
+        host_name       hx3.cloudwm.com
+        hostgroup_name  check_ssl_993
+        use     generic-service
+        display_name    check_ssl_993
+        check_command   check_tcp!993
+        max_check_attempts      5
+        check_interval  5
+        retry_interval  1
+        check_period    24x7
+        process_perf_data       0
+        notification_interval   1440
+        notification_period     24x7
+        contact_groups  OMC - Cloud Services
+        notes   Check if host response to SSL IMAP4 TCP Port 993
+        _default_priority       6 - Critical
+        _default_team   SupportTeam
+}
+
+----------------------------------------------------------------------------------------------|
+CHECK IF PORT IS CLOSED:
+ 
+define command {
+        command_name    check_closed_ssh_22        
+        command_line    $USER1$/check_http -f ok -H helper.monitor.cloudwm.com -u /portscan/portscan.php -P "hostaddress=$HOSTADDRESS$&port=22" -s "Port is not open" -t 20 -w 12 -c 15
+}
+define hostgroup {
+        hostgroup_name  check_closed_ssh_22
+        alias   check_closed_ssh_22
+        members monitor.cloudwm.com
+}
+define service {
+        service_description     check_closed_ssh_22
+        hostgroup_name  check_closed_ssh_22
+        use     generic-service
+        display_name    check_closed_ssh_22
+        check_command   check_closed_ssh_22
+        check_interval  5
+        retry_interval  1
+        process_perf_data       0
+        notification_interval   1440
+        contact_groups  OMC - Cloud Services
+        notes   Check if port 22 (SSH) is closed on host, if port is open return CRITICAL
+        _default_priority       4 - High
+        _default_team   NOCTeam
+}
+
+==============================================================================================================================================================================
+HOW TO ADD CUSTOM SOCKET TIMEOUT ALERT ON SEARCHSTRING:
+ 
+define service {
+        service_description     dsp.reacheffect.com_searchstring
+        host_name      34784_eu-lo_ws_dsp.reacheffect.com
+        use     generic-service
+        display_name    dsp.reacheffect.com/load__det....
+        check_command   check_https_searchstring!"/php/load_details.php"!"OK"! -t 40 -w 15 -c 20
+        check_interval  5
+        retry_interval  1
+        process_perf_data       0
+}
+
+==============================================================================================================================================================================
+MAKE A NEW CUSTOM CHECK IN LINUX - (EXAMPLE FOR CHECK MYSQLD SERVICE RUNNING):
+ 
+1. Create in the server a new file in:
+    vi /etc/nagios/plugins/********* (example: nsca_check_mysqld)
+ 
+2. Write inside the check commands you want:
+ 
+#!/bin/bash
+ 
+check=$( {commands of check that you need} )     #example:       check=$(systemctl status mysqld.service)
+ 
+if [[ $check ]] ; then               #example:        if [[ $check | grep "running" ]] ; then
+      echo "OK: {text of recovery state} "          #example:           echo "OK: All your base are belong to us"
+      exit 0
+else
+      echo "CRITICAL: {text of critical state(failed check)} "
+      exit 2
+fi
+
+exit
+3. Make chmod: 
+    chmod +x check_mysqld
+ 
+4. Add in /etc/nagios/nsca
+   $curDir/send_data.pl $host nsca_check_custom "$curDir/plugins/nsca_check_mysqld"
+   
+5. Add in templates.cfg the "nsca_check_custom" hostgroup in the server's "define_host".
+
+6. service nagios reload
+ 
+********************(1)****ANOTHER EXAMPLE FOR -1-***************************************
+Check GALERA cluster (in mrdb01/02/03/21/22/23.airsoftltd.com /etc/nagios/plugins/check_galera_cluster.sh)
+
+#!/bin/bash
+ 
+. /etc/nagios/nscaConfig
+hostname=$host
+ 
+service="nsca_check_galera_cluster"
+ 
+check_galera_cluster_size=`mysql -e "SHOW STATUS LIKE 'wsrep_cluster_size';" | awk '{print $2}' | tail -1`
+check_galera_network_latency=`mysql -e "SHOW STATUS LIKE 'wsrep_local_send_queue_avg';" | awk '{print $2}' | tail -1 | cut -d'.' -f1`
+check_galera_write_queue=`mysql -e "SHOW STATUS LIKE 'wsrep_local_recv_queue_avg';" | awk '{print $2}' | tail -1| cut -d'.' -f1`
+check_galera_write_queue_second=`mysql -e "SHOW STATUS LIKE 'wsrep_local_send_queue_avg';" | awk '{print $2}' | tail -1 | cut -d'.' -f1`  
+check_galera_delay_node=`mysql -e "SHOW STATUS LIKE 'wsrep_flow_control_paused';" | awk '{print $2}' | tail -1|cut -d'.' -f1`
+check_galera_primary=`mysql -e "SHOW GLOBAL STATUS LIKE 'wsrep_cluster_status';" | awk '{print $2}' | tail -1`
+ 
+if [[ $check_galera_network_latency -ge 1 || "$check_galera_write_queue" -lt "$check_galera_write_queue_second" || $check_galera_delay_node -ge 1 || "$check_galera_primary" -ne 'Primary' ]];then
+ 
+        msg_fld="WARNING network latency $check_galera_network_latency , Galera write queue is $check_galera_write_queue , Galera delay in local node is $check_galera_delay_node , Galera sync status is $check_galera_primary , Galera cluster size is $check_galera_cluster_size"
+        /usr/bin/wget --quiet -O - "http://monitor.omc.co.il/scripts/nagios_checks.php?host=$hostname&service=$service&state=2&msg=$msg_fld" > /dev/null
+        check=2
+else
+        msg_ok="OK - mariaDB galera cluster size is $check_galera_cluster_size , Galera network latency is $check_galera_network_latency , Galera write queue is $check_galera_write_queue , Galera delay in local node is $check_galera_delay_node , Galera sync status is $check_galera_primary"
+        /usr/bin/wget --quiet -O - "http://monitor.omc.co.il/scripts/nagios_checks.php?host=$hostname&service=$service&state=0&msg=$msg_ok" > /dev/null
+        check=0
+fi
+exit ${check}
+
+********************(2)****ANOTHER EXAMPLE FOR -2-***************************************
+Check Long Queries in MYSQL on MRDB servers (airsoftltd):
+
+#!/bin/bash
+ 
+. /etc/nagios/nscaConfig
+hostname=$host
+ 
+service="nsca_check_long_queries"
+ 
+check_time1=45
+check_time2=300
+nsca_check_long_queries=`mysql -e "SELECT count(*) FROM INFORMATION_SCHEMA.PROCESSLIST where COMMAND not in ('Sleep') and TIME > $check_time1;" | awk '{print $1}' | tail -1`
+extra_long_query=`mysql -e "SELECT count(*) FROM INFORMATION_SCHEMA.PROCESSLIST where COMMAND not in ('Sleep') and TIME > $check_time2;" | awk '{print $1}' | tail -1`
+ 
+if [[ $nsca_check_long_queries -gt 5 || $extra_long_query -gt 0 ]];then
+ 
+        msg_fld="There are $nsca_check_long_queries queries that are running over $check_time1 sec , There are $extra_long_query queries that are running over $check_time2 sec."
+        /usr/bin/wget --quiet -O - "http://monitor.omc.co.il/scripts/nagios_checks.php?host=$hostname&service=$service&state=2&msg=$msg_fld" > /dev/null
+        check=2
+else
+        msg_ok="OK - Running queries are $nsca_check_long_queries, Unusually long queries that are over $check_time2 sec: $extra_long_query"
+        /usr/bin/wget --quiet -O - "http://monitor.omc.co.il/scripts/nagios_checks.php?host=$hostname&service=$service&state=0&msg=$msg_ok" > /dev/null
+        check=0
+fi
+exit ${check}
+ 
+********************(3)****ANOTHER EXAMPLE FOR -3-***************************************
+Check for HIGH LATENCY back-end responses on HAproxy (airsoftltd example)
+
+. /etc/nagios/nscaConfig
+hostname=$host
+ 
+service=nsca_check_service1
+ 
+warning_ms="2000"
+critical_ms="4000"
+greater_than="2"
+ 
+warning_latency=$(for i in `curl -s 'http://127.0.0.1:1936/stats\;csv' | awk -F ',' '{print $61}'` ;do if [[ $i -gt $warning_ms ]]; then echo $i ;fi ;done | wc -l)
+critical_latency=$(for i in `curl -s 'http://127.0.0.1:1936/stats\;csv' | awk -F ',' '{print $61}'` ;do if [[ $i -gt $critical_ms ]]; then echo $i ;fi ;done | wc -l)
+ 
+backend_warning=$(curl -s 'http://127.0.0.1:1936/stats\;csv' | awk -F ',' -v p=$warning_ms 'NR>1{if ($61 > p) print $1,$2}' | tr "\n" "|")
+backend_critical=$(curl -s 'http://127.0.0.1:1936/stats\;csv' | awk -F ',' -v p=$critical_ms 'NR>1{if ($61 > p) print $1,$2}' | tr "\n" "|")
+ 
+if   [[ $critical_latency -gt $greater_than ]];then
+ 
+        msg_fld="CRITICAL: $critical_latency Back-end latency responses over ${critical_ms}ms , A total of $warning_latency Back-end latency responses over ${warning_ms}ms. SERVERS: ${backend_critical}."
+        /usr/bin/wget --quiet -O - "http://monitor.omc.co.il/scripts/nagios_checks.php?host=$hostname&service=$service&state=2&msg=$msg_fld" > /dev/null
+ 
+elif [[ $warning_latency -gt $greater_than ]];then
+        msg_fld="WARNING: $warning_latency Back-end latency responses over ${warning_ms}ms. SERVERS: ${backend_warning}."
+        /usr/bin/wget --quiet -O - "http://monitor.omc.co.il/scripts/nagios_checks.php?host=$hostname&service=$service&state=2&msg=$msg_fld" > /dev/null
+else
+        msg_ok="OK - no more than $greater_than back-end latencies over ${warning_ms}ms"
+        /usr/bin/wget --quiet -O - "http://monitor.omc.co.il/scripts/nagios_checks.php?host=$hostname&service=$service&state=0&msg=$msg_ok" > /dev/null
+fi
+exit ${check}
+
+********************(4)****ANOTHER EXAMPLE FOR -4-***************************************
+Check for OOM Killer (multi-server example)
+
+#!/bin/bash
+set -x
+ 
+time_now=$(date "+%s")
+ 
+messages_time=$(cat /var/log/messages | grep sacrifice | tail -n 1 | awk '{print $1,$2,$3}')
+messages_proc=$(cat /var/log/messages | grep sacrifice | tail -n 1 | awk -F '(' '{print $2}' | awk -F ')' '{print $1}')
+ 
+dmesg_time=$(dmesg -T | grep sacrifice | tail -n 1 | awk  '{print $2,$3,$4,$5}' | sed 's/]/ /g')
+dmesg_proc=$(dmesg -T | grep sacrifice | tail -n 1 | awk -F '(' '{print $2}' | awk -F ')' '{print $1}' )
+ 
+if [[ ! -z $messages_time ]] && [[ $(($time_now-$(date "+%s" -d "$messages_time $(date '+%Y')"))) -lt 1800 ]]; then
+        echo "CRITICAL: Server had Out of memory occurrence at $messages_time. Processes Killed: $messages_proc"
+        exit 2
+elif [[ ! -z $dmesg_time ]] && [[ $(($time_now-$(date "+%s" -d "$dmesg_time"))) -lt 1800 ]] ; then
+        echo "CRITICAL: Server had Out of memory occurrence at $dmesg_time. Processes Killed: $dmesg_proc"
+        exit 2
+else
+        echo "OK: No Out of memory occurrence in last 30 minutes."
+        exit 0
+fi
+ 
+exit 3
+ 
+==============================================================================================================================================================================
+MAKE A NEW CUSTOM CHECK IN WINDOWS - (EXAMPLE FOR CHECK NTP SERVICE RUNNING):
+ 
+1. Add this in our monitor server (commands.cfg):
+ 
+define hostgroup {
+        hostgroup_name  nsca_check_ntp
+        alias   nsca_check_ntp
+        members 70035_il-pt_vm_shiftorganizer-timekeeper4
+}
+define service {
+        service_description     nsca_check_ntp
+        host_name       70035_il-pt_vm_shiftorganizer-timekeeper4
+        hostgroup_name  nsca_check_ntp
+        use     passive-service
+        display_name    nsca_check_ntp
+        check_command   check_dummy
+        max_check_attempts      6
+        check_freshness 1
+        freshness_threshold     600
+        process_perf_data       0
+        notification_interval   1440
+        notes   Checks if NTP is in sync
+        _default_priority       4 - High
+        _default_team   supportteam
+}
+
+2. Create a "check_windows_time.bat" file in the client's "NSClient++/scripts" folder and paste this in it:
+    *the command is on our databases at: P:\הדרכות כללי\Nagios COMMANDS & TEMPLATES for the file.
+
+3. Add lines in client .ini file:
+ 
+[/settings/external scripts/scripts]
+alias_check_ntp =scripts\check_windows_time.bat pool.ntp.org 180 300
+ 
+[/settings/scheduler/schedules]
+nsca_check_ntp=alias_check_ntp
+ 
+4. add "nsca_check_ntp" to the server hostgroup in our monitor server at templates.cfg 
+
+==============================================================================================================================================================================
+MONITOR TIME PERIODS:
+ 
+=========================TIME PERIOD - PASSIVE SERVICE=======================
+1. in timeperiods.cfg:
+define timeperiod {
+        timeperiod_name sigmanet_svc
+        alias   Skips svc check from 08:50 to 09:08
+        sunday  00:00-08:50,09:08-24:00
+        monday  00:00-08:50,09:08-24:00
+        tuesday 00:00-08:50,09:08-24:00
+        wednesday       00:00-08:50,09:08-24:00
+        thursday        00:00-08:50,09:08-24:00
+        friday  00:00-08:50,09:08-24:00
+        saturday        00:00-08:50,03:20-24:00
+}
+2. in commands.cfg:
+define service {
+        service_description     nsca_check_svc_sigmanet_tperiod
+        host_name       41302_eu_vm_ts1.sigmanet.co.il 
+        hostgroup_name  nsca_check_svc_sigmanet_tperiod
+        display_name    Services Status
+        check_command   check_dummy
+        check_interval  5
+        retry_interval  1
+        max_check_attempts      5
+        check_freshness 1
+        active_checks_enabled   0
+        freshness_threshold     600
+        process_perf_data       1
+        flap_detection_enabled  0
+        check_period     sigmanet_svc
+        notification_period      sigmanet_svc
+        notification_interval   1440
+        notes   Host check of custom operation system services status
+        notes_url       /eznag/index.php?action=displaygraph&host=ts.omcdom.hq.omc.co.il&service=nsca_check_svc
+        _default_priority       4 - High
+        _default_team   SupportTeam
+}
+define hostgroup {
+        hostgroup_name  nsca_check_svc_sigmanet_tperiod
+        alias   nsca_check_svc_sigmanet_tperiod
+        members 41302_eu_vm_ts1.sigmanet.co.il 
+}
+3. in templates.cfg:  (add the "nsca_check_svc_sigmanet_tperiod")
+define host {
+        host_name       41302_eu_vm_ts1.sigmanet.co.il
+        use     generic-server
+        display_name    41302_eu_vm_ts1.sigmanet.co.il
+        alias   41302_eu_vm_ts1.sigmanet.co.il
+        address 109.201.149.29
+        hostgroups      nsca_check_cpu,nsca_check_disk,nsca_check_mem,nsca_check_svc_sigmanet_tperiod,check_ping,check_rdp
+        contacts        josef@sigmanet.co.il,0546885003@sms.inforu.co.il
+        contact_groups  OMC - Cloud Services
+        notifications_enabled   1
+}
+**********BEFORE MAKING PASSIVE CHECK WITH A DIFFERENT NAME DON'T FORGET TO CHANGE IT IN THE CLIENT'S ini OR nsca!!!!**********
+
+*********************************TIME PERIOD - ACTIVE SERVICE*********************************
+define command {
+        command_name    check_ping_tperiod
+        command_line    $USER1$/check_ping -H $HOSTADDRESS$ -w $ARG1$ -c $ARG2$ -p 5
+}
+define hostgroup {
+        hostgroup_name  check_ping_tperiod
+        alias   check_ping_tperiod
+}
+define service {
+        service_description     check_ping_tperiod
+        host_name       monitor.cloudwm.com
+        hostgroup_name  check_ping_tperiod
+        use     generic-service_timeperiod
+        check_command   check_ping!250.0,20%!1000.0,60%
+        process_perf_data       0
+        notification_interval   1440
+        notes   Check if host response to PING (icmp) request
+        notes_url       /eznag/index.php?action=displaygraph&host=monitor.omc.co.il&service=PING
+        _default_priority       6 - Critical
+        _default_team   SupportTeam
+}
+
+==============================================================================================================================================================================
+INSTALL NAGIOS ON PHOTON LINUX:
+ 
+cd /tmp
+wget wget http://yum.jasonlitka.com/EL5/x86_64//libmcrypt-2.5.8-4.el5.centos.x86_64.rpm
+rpm -Uvh libmcrypt-2.5.8-4.el5.centos.x86_64.rpm
+wget http://ftp.tu-chemnitz.de/pub/linux/dag/redhat/el5/en/x86_64/rpmforge/RPMS/nagios-nsca-client-2.7.2-4.el5.rf.x86_64.rpm
+rpm -Uvh nagios-nsca-client-2.7.2-4.el5.rf.x86_64.rpm
+mkdir /etc/nagios/
+cd /etc/nagios/
+wget -t 2
+--connect-timeout=3 ftp://ftpnagomc:E40MCNag@5.100.254.221/nsca.tgz
+tar -xzf nsca.tgz
+cd /etc/nagios/plugins
+rm -f /etc/nagios/plugins/check_swap
+rm -f /etc/nagios/plugins/check_disk
+rm -f /etc/nagios/plugins/check_load
+wget ftp://ftpnagomc:E40MCNag@5.100.254.221/check_swap
+wget ftp://ftpnagomc:E40MCNag@5.100.254.221/check_disk
+wget ftp://ftpnagomc:E40MCNag@5.100.254.221/check_load
+chmod +x *
+
+==============================================================================================================================================================================
+HOW TO MAKE PLUGINS INSTALL INCASE INSTALATION FAIL THROUGH POWER-SHELL SCRIPT:
+
+(ubuntu): 
+1. Create a new .sh file:
+vi nagiosfix.sh
+ 
+2. Paste this inside the new .sh file:
+cd /tmp/
+apt-get --yes --force-yes -f install wget
+wget http://ftp.de.debian.org/debian/pool/main/libm/libmcrypt/libmcrypt4_2.5.8-3.3_amd64.deb
+dpkg -i libmcrypt4_2.5.8-3.3_amd64.deb
+wget http://ftp.de.debian.org/debian/pool/main/n/nsca/nsca-client_2.9.1-3.1_amd64.deb
+dpkg -i nsca-client_2.9.1-3.1_amd64.deb
+wget http://ftp.de.debian.org/debian/pool/main/n/nagios-plugins/nagios-plugins-common_1.4.16-1_amd64.deb
+dpkg -i nagios-plugins-common_1.4.16-1_amd64.deb
+wget http://ftp.de.debian.org/debian/pool/main/n/nagios-plugins/nagios-plugins-basic_1.4.16-1_amd64.deb
+dpkg -i nagios-plugins-basic_1.4.16-1_amd64.deb
+ 
+3. Save .sh file, then run this command:
+chmod +x nagiosfix.sh
+ 
+4.
+./nagiosfix.sh.
+ 
+5.
+/etc/nagios/nsca
+(CentOS) replace *2*:
+
+cd /tmp/
+yum update -y
+yum install wget -y
+wget http://ftp.pbone.net/mirror/apt.sw.be/redhat/el5/en/i386/rpmforge/RPMS/rpmforge-release-0.5.3-1.el5.rf.i386.rpm  
+rpm -Uvh rpmforge-release-0.5.3-1.el5.rf.i386.rpm
+wget http://ftp.pbone.net/mirror/apt.sw.be/redhat/el6/en/x86_64/rpmforge/RPMS/rpmforge-release-0.5.3-1.el6.rf.x86_64.rpm   
+rpm -Uvh rpmforge-release-0.5.3-1.el6.rf.x86_64.rpm 
+yum install libmcrypt -y
+yum install ld-linux.so.2 -y
+yum install nagios-nsca-client -y
+mkdir /etc/nagios
+cd /etc/nagios/
+wget -t 2 --connect-timeout=3 ftp://ftpnagomc:E40MCNag@5.100.254.221/nsca.tgz
+tar -xzf nsca.tgz
